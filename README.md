@@ -8,6 +8,8 @@ Three self-built labs covering help desk support, Active Directory administratio
 
 **Skills:** osTicket · Active Directory · Windows Server · Group Policy · Sysmon · Event Viewer and PowerShell log analysis · VirtualBox
 
+**Currently training:** Working through the TryHackMe *Cyber Security 101* path (hands-on labs in Linux, networking, defensive and offensive security).
+
 ---
 
 ## Lab 1: Help desk ticket system
