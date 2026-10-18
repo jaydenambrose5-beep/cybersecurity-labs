@@ -4,9 +4,9 @@ Hands-on IT support and security labs I built in a home lab in October 2026. Eac
 
 ## At a glance
 
-Five self-built labs covering help desk support, Active Directory administration, security monitoring, cloud SIEM, and incident investigation. I built a ticketing system and a Windows domain, resolved 9 support and security tickets, detected a simulated attack in Windows logs, and investigated a suspicious login in Splunk, where I found and fixed a logging gap.
+Six self-built labs covering help desk support, Active Directory administration, security monitoring, cloud SIEM, incident investigation, and phishing analysis. I built a ticketing system and a Windows domain, resolved 9 support and security tickets, detected a simulated attack in Windows logs, and investigated a suspicious login in Splunk (finding and fixing a logging gap), and traced it back to a spear-phishing email.
 
-**Skills:** osTicket · Active Directory · Windows Server · Group Policy · Sysmon · Splunk Cloud · Event Viewer and PowerShell log analysis · VirtualBox
+**Skills:** osTicket · Active Directory · Windows Server · Group Policy · Sysmon · Splunk Cloud · Event Viewer and PowerShell log analysis · Phishing and email header analysis (SPF, DKIM, DMARC) · VirtualBox
 
 **Currently training:** Working through the TryHackMe *Cyber Security 101* path (hands-on labs in Linux, networking, defensive and offensive security).
 
@@ -21,6 +21,7 @@ flowchart LR
         DC["DC01<br/>Windows Server 2025<br/>Domain controller: helpdesk.local<br/>Sysmon + audit policy<br/>(incl. Kerberos auth failures)"]
         UF["Splunk Universal Forwarder"]
         DC -- "Security, System,<br/>Sysmon logs" --> UF
+        PS["PowerShell email triage<br/>(phishing analysis, on host)"]
     end
     UF -- "Encrypted forwarding" --> SC["Splunk Cloud<br/>SIEM + monitoring dashboard"]
 ```
@@ -279,3 +280,62 @@ The "Top Security Event Codes" panel showed my test activity and my cleanup, inc
 - On a domain controller, failed logins show up as 4771 (Kerberos) or 4776 (NTLM), not just 4625.
 - Speed between events is a clue. People do not enable, reset, and log in within 2 seconds.
 - Next step: delete or tightly manage dormant accounts, and alert on 4722 for any account that has been disabled a long time.
+
+---
+
+## Lab 6: Phishing email analysis
+
+**Objective:** Find out how the attacker in Lab 5 got akim's password, by analyzing the phishing email akim received the night before, the way a SOC analyst triages a reported email.
+
+**Setup**
+
+- A raw email file ([lab6-sample-phish.eml](detections/lab6-sample-phish.eml)) sent to akim on Saturday night, before the Sunday-morning login in Lab 5. It uses fictional domains and is safe to open.
+- Notepad to read the raw email without rendering it (never double-click a suspicious email)
+- A PowerShell triage script on the host laptop, no VM needed
+
+**Evidence**
+
+![Email headers](lab6-headers.PNG)
+
+*Failed SPF, DKIM, and DMARC checks, and a Reply-To that doesn't match the sender.*
+
+![Email body](lab6-body.PNG)
+
+*Urgent message, generic greeting, typo, and a link whose text doesn't match where it goes.*
+
+![PowerShell triage](lab6-powershell.PNG)
+
+*My script pulls out the sender details, ID checks, and the real (defanged) link.*
+
+**Investigation**
+
+| Red flag | Where | What I found |
+| --- | --- | --- |
+| Urgency and threat | Body | "Expires in 2 hours", "you will be locked out" |
+| Generic greeting | Body | "Dear Employee" instead of a name |
+| Typo | Body | "IT Securty Team" |
+| Blocks verification | Body | "Do not contact the help desk", so the victim can't check |
+| Mismatched link | Body | Shows `helpdesk.local/password-reset` but goes to `quick-reset-desk.example` |
+| Spear phishing | Link | `?user=akim`: the link was built for one target |
+| Reply-To mismatch | Headers | From `helpdesk-support.example`, replies go to `quick-reset-desk.example` (the same attacker domain as the link) |
+| Failed ID checks | Headers | SPF fail, DKIM none, DMARC fail, sent from a bulk mailer (`mass-mailer-04.example`, 203.0.113.45) |
+| Delivered anyway | Headers | `dmarc=fail action=none` |
+
+**Root cause:** The domain's DMARC policy was set to `none` (monitor only), so an email that failed every check still reached akim's inbox. akim entered the password on the fake page, and the attacker used it the next morning (Lab 5).
+
+**Resolution**
+
+- Block both attacker domains (`helpdesk-support.example`, `quick-reset-desk.example`) in the email filter.
+- Search every mailbox for the same sender, subject, and link, and remove any copies.
+- Change the DMARC policy from `none` to `quarantine`, then `reject` once legitimate mail is confirmed passing.
+- Phishing awareness training for akim and the team: check the real link, and verify with the help desk.
+- akim's account was already disabled and the password reset in Lab 5.
+- Wrote a reusable triage script: [lab6-phishing-analysis.ps1](detections/lab6-phishing-analysis.ps1).
+
+**Lessons learned**
+
+- Read a link right to left. The real owner is the part right before the first `/`. Everything in front of it can be a costume.
+- Don't just delete a phishing email. Others may have received it, so hunt for it across all mailboxes.
+- Never reply to a phishing email. It confirms the address is real.
+- A failed check only protects you if the policy acts on it. DMARC `none` watches but doesn't block.
+- Labs 5 and 6 together tell one story: phishing email (cause) → stolen password → suspicious login (effect).
