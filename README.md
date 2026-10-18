@@ -295,11 +295,11 @@ The "Top Security Event Codes" panel showed my test activity and my cleanup, inc
 
 **Evidence**
 
-![Email headers](lab6-headers.PNG)
+![Email headers](lab6-headers.png)
 
 *Failed SPF, DKIM, and DMARC checks, and a Reply-To that doesn't match the sender.*
 
-![Email body](lab6-body.PNG)
+![Email body](body.png)
 
 *Urgent message, generic greeting, typo, and a link whose text doesn't match where it goes.*
 
