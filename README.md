@@ -10,6 +10,21 @@ Four self-built labs covering help desk support, Active Directory administration
 
 **Currently training:** Working through the TryHackMe *Cyber Security 101* path (hands-on labs in Linux, networking, defensive and offensive security).
 
+**Detection queries:** the actual PowerShell and Splunk searches I wrote are in [/detections](detections/).
+
+## Lab architecture
+
+```mermaid
+flowchart LR
+    subgraph Host["Host laptop - VirtualBox (8 GB RAM, one VM at a time)"]
+        PC["HelpDesk-PC<br/>Windows 11<br/>osTicket on XAMPP"]
+        DC["DC01<br/>Windows Server 2025<br/>Domain controller: helpdesk.local<br/>Sysmon + audit policy"]
+        UF["Splunk Universal Forwarder"]
+        DC -- "Security, System,<br/>Sysmon logs" --> UF
+    end
+    UF -- "Encrypted forwarding" --> SC["Splunk Cloud<br/>SIEM + monitoring dashboard"]
+```
+
 ---
 
 ## Lab 1: Help desk ticket system
