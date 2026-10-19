@@ -1,0 +1,30 @@
+Return-Path: <bounce-7731@mass-mailer-04.example>
+Received: from mail.helpdesk.local (10.0.0.10) by DC01.helpdesk.local
+ with SMTP; Sat, 17 Oct 2026 22:14:12 -0400
+Received: from mass-mailer-04.example (unknown [203.0.113.45])
+ by mail.helpdesk.local with ESMTP id 4F2A91; Sat, 17 Oct 2026 22:14:10 -0400
+Authentication-Results: mail.helpdesk.local;
+ spf=fail (sender IP 203.0.113.45 not permitted by helpdesk-support.example) smtp.mailfrom=bounce-7731@mass-mailer-04.example;
+ dkim=none (message not signed);
+ dmarc=fail action=none header.from=helpdesk-support.example
+From: "Helpdesk IT Support" <it-support@helpdesk-support.example>
+Reply-To: <account-verify@quick-reset-desk.example>
+To: <akim@helpdesk.local>
+Subject: URGENT: Your password expires in 2 hours - action required
+Date: Sat, 17 Oct 2026 22:14:09 -0400
+Message-ID: <a81f3c2e9d@mass-mailer-04.example>
+X-Mailer: BulkSend Pro 3.1
+MIME-Version: 1.0
+Content-Type: text/html; charset="UTF-8"
+
+<html>
+<body style="font-family: Arial, sans-serif;">
+<p>Dear Employee,</p>
+<p>Our system shows your helpdesk.local password <b>will expire in 2 hours</b>.
+If you do not verify your account now, you will be <b>locked out</b> and lose access to email and files.</p>
+<p><a href="http://helpdesk-local.quick-reset-desk.example/verify?user=akim">https://helpdesk.local/password-reset</a></p>
+<p>This is an automated message. Do not contact the help desk about this notice.</p>
+<p>Thank you,<br>IT Securty Team</p>
+<p style="font-size:10px;color:gray;">TRAINING SAMPLE - Lab 6 (fictional domains, safe to open)</p>
+</body>
+</html>
