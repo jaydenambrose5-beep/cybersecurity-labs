@@ -358,23 +358,35 @@ The "Top Security Event Codes" panel showed my test activity and my cleanup, inc
 
 **Evidence**
 
-![Scan 1: no credentials](lab7-scan1-results.png)
+![Scan 1: no credentials](lab7-scan1-results.PNG)
 
 *Scan 1 (outsider view): 25 findings, all Info.*
 
-![Scan 2: credentialed](lab7-scan2-results.png)
+![Credentialed scan settings](lab7-scan2-credentials.PNG)
+
+*Scan 2 credentials: domain login, NTLMv1 disabled, credentials never sent in the clear.*
+
+![Scan 2: credentialed](lab7-scan2-results.PNG)
 
 *Scan 2 (credentialed): 59 findings, including missing Windows and .NET security updates.*
 
-![Patch verified](lab7-patch-verified.png)
+![Patching](lab7-patching.PNG)
+
+*Installing the October 2026 Windows and .NET security updates (after taking a snapshot first).*
+
+![Patch verified](lab7-patch-verified.PNG)
 
 *PowerShell proof the October 2026 update (KB5126646, build 33650) installed, even though the Windows Update screen was stuck at 7%.*
 
-![Registry fix](lab7-registry-fix.png)
+![Re-scan after patching](lab7-rescan-results.PNG)
+
+*Re-scan after patching: Critical gone, one High left (CVE-2013-3900).*
+
+![Registry fix](lab7-registry-fix.PNG)
 
 *CVE-2013-3900 fix turned on in both registry locations.*
 
-![Final results](lab7-final-results.png)
+![Final results](lab7-final-results.PNG)
 
 *Final re-scan: 0 Critical, 0 High.*
 
