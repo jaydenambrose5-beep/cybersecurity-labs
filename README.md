@@ -1,42 +1,507 @@
-# Detection Queries
+# Cybersecurity Lab Portfolio
 
-The actual searches I used to investigate activity in my home lab.
+Hands-on IT support and security labs I built in a home lab in October 2026. Each lab follows the same format: objective, setup, evidence, investigation, resolution, and lessons learned.
 
-| File | Tool | Lab |
+## At a glance
+
+Eight self-built labs covering help desk support, Active Directory administration, Windows and Linux security monitoring, cloud SIEM, incident investigation, phishing analysis, and vulnerability management. I built a ticketing system and a Windows domain, resolved 9 support and security tickets, detected a simulated attack in Windows logs, and investigated a suspicious login in Splunk (finding and fixing a logging gap), traced it back to a spear-phishing email, took a domain controller from 1 Critical and 7+ High vulnerabilities to zero with Nessus, and monitored and hardened a Linux server in Splunk.
+
+**Skills:** osTicket · Active Directory · Windows Server · Group Policy · Sysmon · Splunk Cloud · Event Viewer and PowerShell log analysis · Phishing and email header analysis (SPF, DKIM, DMARC) · Nessus vulnerability scanning · Linux (Ubuntu Server, SSH hardening) · VirtualBox
+
+**Currently training:** Working through the TryHackMe *Cyber Security 101* path (hands-on labs in Linux, networking, defensive and offensive security).
+
+**Detection queries:** the actual PowerShell and Splunk searches I wrote are in [/detections](detections/).
+
+## Lab architecture
+
+```mermaid
+flowchart LR
+    subgraph Host["Host laptop - VirtualBox (8 GB RAM, one VM at a time)"]
+        PC["HelpDesk-PC<br/>Windows 11<br/>osTicket on XAMPP"]
+        DC["DC01<br/>Windows Server 2025<br/>Domain controller: helpdesk.local<br/>Sysmon + audit policy<br/>(incl. Kerberos auth failures)"]
+        UF["Splunk Universal Forwarder"]
+        DC -- "Security, System,<br/>Sysmon logs" --> UF
+        PS["PowerShell email triage<br/>(phishing analysis, on host)"]
+        NS["Nessus Essentials<br/>(on host)"]
+        NS -- "Host-only network<br/>192.168.56.0/24<br/>credentialed scan (SMB 445)" --> DC
+        UB["UBUNTU01<br/>Ubuntu Server 26.04<br/>SSH: keys only"]
+        UF2["Splunk Universal Forwarder<br/>(runs as splunkfwd)"]
+        UB -- "/var/log/auth.log" --> UF2
+    end
+    UF2 -- "Encrypted forwarding" --> SC
+    UF -- "Encrypted forwarding" --> SC["Splunk Cloud<br/>SIEM + monitoring dashboard"]
+```
+
+---
+
+## Lab 1: Help desk ticket system
+
+**Objective:** Learn how a help desk ticket system works by building one and resolving support tickets from start to finish.
+
+**Setup**
+
+- VirtualBox virtual machine running Windows 11
+- XAMPP (Apache web server, MariaDB database, PHP 8.2)
+- osTicket 1.18.4 with 2 departments (IT Support, Security), 3 test users, and help topics that route tickets
+
+**Evidence**
+
+![Help topics routing](help-topics.png)
+
+*Help topics route password resets to IT Support and phishing reports to Security at High priority.*
+
+![Ticket created](ticket-created.png)
+
+*A password reset ticket created, assigned, and tracked.*
+
+![Closed tickets](closed-tickets.png)
+
+*All five support tickets resolved and closed.*
+
+**Investigation**
+
+- The install failed with HTTP Error 500. The Apache error log showed "Access denied for user root," so the installer was using the wrong database account.
+- The new ticket form was missing its Issue Summary field. Testing a second help topic showed it was not my setup but a known osTicket bug.
+- For each ticket, I identified the cause: a forgotten password, a phishing email with a fake login link, too many programs running, an offline printer, and a lockout from typos.
+
+**Resolution**
+
+- Created a separate database user with access to only the osTicket database, then finished the install.
+- Set a default help topic, which fixed the missing field.
+- Resolved all 5 tickets, verifying identity before every password reset or unlock.
+- Secured the install by deleting the setup folder and making the config file read-only.
+
+**Lessons learned**
+
+- Check error logs first. They named the exact problem faster than guessing.
+- Clear browser autofill before typing credentials. It silently reused the wrong username.
+- Take a snapshot before every big step, so mistakes are easy to undo.
+
+---
+
+## Lab 2: Active Directory domain
+
+**Objective:** Learn how companies manage user accounts with Active Directory, and practice the account problems help desks handle every day.
+
+**Setup**
+
+- VirtualBox virtual machine running Windows Server 2025 (DC01)
+- New domain: helpdesk.local
+- OUs for IT, Sales and Security; 3 users; a Sales Team security group
+- Account lockout policy in Group Policy: 5 failed logins locks an account for 10 minutes
+
+**Evidence**
+
+![Domain controller ready](domain-ready.png)
+
+*DC01 running as the domain controller for helpdesk.local.*
+
+![Lockout policy](lockout-policy.png)
+
+*Account lockout policy: 5 failed logins locks an account for 10 minutes.*
+
+![Event 4740](event-4740.png)
+
+*Event ID 4740 in the Security log, showing the lockout.*
+
+**Investigation**
+
+- Searched 2,916 Security events and found the 1 lockout event (4740), with the time, account and computer it came from.
+- The domain policy could not be edited. My admin account had server rights but not Domain Admin rights.
+- My first try at the lockout setting was in Default Domain Controllers Policy. User lockout rules only work in Default Domain Policy.
+
+**Resolution**
+
+- Unlocked the account and confirmed the error changed from 1909 (locked) to 1326 (wrong password).
+- Reset a password and required a new one at next logon.
+- Disabled the account of an employee who left, with a dated note, instead of deleting it.
+- Logged each fix as a ticket in osTicket.
+
+**Lessons learned**
+
+- Use a separate admin account for admin work, instead of giving my everyday account Domain Admin rights.
+- When a wizard freezes, try PowerShell. It installed Active Directory when the wizard would not.
+- Check memory before running 2 virtual machines. With 8 GB, running both crashed my computer.
+
+---
+
+## Lab 3: Windows security monitoring
+
+**Objective:** Learn how a SOC analyst detects an attack in Windows logs, by attacking my own lab and then hunting for each step.
+
+**Setup**
+
+- DC01 (Windows Server 2025) from Lab 2
+- Audit policy for logons, new programs with full command lines, account and group changes, and scheduled tasks
+- Sysmon 15.22 with the SwiftOnSecurity config, and PowerShell script block logging
+- Event Viewer custom view and PowerShell (Get-WinEvent) for searching
+
+**Evidence**
+
+![Event 4728](event-4728.png)
+
+*svc-backup added to Domain Admins (Event 4728).*
+
+![Encoded command](encoded-command.png)
+
+*The scrambled PowerShell command in Sysmon, decoded via Event 4104.*
+
+![Incident ticket](incident-ticket.png)
+
+*The incident documented and resolved in osTicket.*
+
+**Investigation**
+
+| What happened | Event ID | What the log showed |
 | --- | --- | --- |
-| [lab3-powershell-hunting.ps1](lab3-powershell-hunting.ps1) | PowerShell `Get-WinEvent` | Lab 3: Windows security monitoring |
-| [lab4-splunk-spl.md](lab4-splunk-spl.md) | Splunk SPL | Lab 4: Cloud SIEM monitoring |
-| [lab5-suspicious-login.md](lab5-suspicious-login.md) | Splunk SPL + PowerShell | Lab 5: Suspicious login investigation |
-| [lab6-phishing-analysis.ps1](lab6-phishing-analysis.ps1) | PowerShell | Lab 6: Phishing email analysis |
-| [lab6-sample-phish.eml](lab6-sample-phish.eml) | Sample email (fictional domains) | Lab 6: Phishing email analysis |
-| [lab7-remediation-checks.ps1](lab7-remediation-checks.ps1) | PowerShell | Lab 7: Vulnerability scanning with Nessus |
-| [lab8-linux-splunk.md](lab8-linux-splunk.md) | Splunk SPL + Linux | Lab 8: Linux security monitoring |
+| Password guessing | 4625 | 3 failed logins for scarter within seconds |
+| Hidden admin account | 4720, 4728 | New account svc-backup, added to Domain Admins |
+| Persistence task | 4698 | Task "WindowsUpdateCheck" set to run cmd.exe daily at 3 AM |
+| Encoded PowerShell | Sysmon 1, 4104 | Sysmon caught the scrambled command; Event 4104 showed the real one |
 
-## Event IDs used
+I also ruled out 2 false alarms: one failed login that was my own typo, and a group change made by Windows during setup.
 
-| Event ID | Log | Meaning |
-| --- | --- | --- |
-| 4624 | Security | Successful logon |
-| 4625 | Security | Failed logon |
-| 4688 | Security | New process created |
-| 4698 / 4699 | Security | Scheduled task created / deleted |
-| 4720 | Security | User account created |
-| 4722 | Security | User account enabled |
-| 4724 | Security | Password reset by an admin |
-| 4725 | Security | User account disabled |
-| 4728 / 4729 | Security | Member added to / removed from a security group |
-| 4740 | Security | Account locked out |
-| 4771 | Security | Kerberos login failed (domain controller) |
-| 4776 | Security | NTLM credential check (domain controller) |
-| 1 | Sysmon | Process create (with full command line) |
-| 4104 | PowerShell Operational | Script block logging (decoded PowerShell) |
+**Resolution**
 
-## Email checks used (Lab 6)
+- Disabled svc-backup and removed it from Domain Admins.
+- Deleted the scheduled task.
+- Confirmed Domain Admins had only the expected accounts.
+- Documented the investigation and response in an incident ticket.
 
-| Check | What it means |
+**Lessons learned**
+
+- Turn logging on before an incident happens. Without it, the encoded command would have been invisible.
+- Check which window a command will run in. I once ran commands on my real computer by mistake.
+- Remove installer discs from virtual machines after setup. One rebooted into the Windows installer, and a snapshot saved it.
+- Next time, send logs to a SIEM tool like Wazuh or Splunk, so alerts happen automatically.
+
+---
+
+## Lab 4: Cloud SIEM monitoring with Splunk
+
+**Objective:** Learn how a SOC collects logs into one central SIEM, by streaming my domain controller's logs to Splunk Cloud and building a monitoring dashboard.
+
+**Setup**
+
+- DC01 (Windows Server 2025) from Labs 2 and 3
+- Splunk Cloud Platform (free trial) as the central SIEM
+- Splunk Universal Forwarder 10.6.1 on DC01, connected with the Splunk Cloud credentials package
+- Log sources: Windows Security, System, and Sysmon
+
+**Evidence**
+
+![All log sources streaming](splunk-all-sources.png.PNG)
+
+*All three log sources streaming from DC01 into Splunk Cloud.*
+
+![Security monitoring dashboard](splunk-dashboard-final.png.PNG)
+
+*The "DC01 Security Monitoring" dashboard: logs by source and top Security event codes.*
+
+**Investigation**
+
+| Problem | What I found |
 | --- | --- |
-| SPF | Is the sending server allowed to send for that domain? |
-| DKIM | Is the email digitally signed and unchanged? |
-| DMARC | What the receiving server should do when SPF/DKIM fail (none, quarantine, reject) |
-| From vs Reply-To vs Return-Path | Should share a domain; a mismatch is a red flag |
-| Link text vs href | The text shown can differ from where the link really goes |
+| Wazuh Cloud dashboard login kept failing | Single sign-on from the console would not pass through |
+| Forwarder said "No users exist" | The admin account was never created during install |
+| Only System logs arrived | The forwarder ran as a limited account that could not read the Security log |
+
+The "Top Security Event Codes" panel showed my test activity and my cleanup, including account changes (4720, 4728, 4729, 4725) and scheduled task events (4698, 4699).
+
+**Resolution**
+
+- Switched from Wazuh Cloud to Splunk Cloud instead of losing time on a broken login.
+- Created the forwarder admin account and installed the credentials package.
+- Configured the forwarder to send Security, System, and Sysmon logs.
+- Changed the forwarder service account so it could read every log.
+- Built a two-panel monitoring dashboard.
+
+**Lessons learned**
+
+- When a tool keeps fighting you, pivot. Splunk Cloud did the same job without the login problems.
+- Running the forwarder as LocalSystem worked, but in production I would use a dedicated account with only the access it needs (least privilege).
+- Most events are normal noise. The skill is spotting the few that matter.
+- A cloud SIEM let me run a real logging pipeline on an 8 GB laptop with one VM.
+
+---
+
+## Lab 5: Suspicious login investigation
+
+**Objective:** Learn how a SOC analyst investigates an unexpected login, by simulating a dormant account being taken over outside business hours and tracing it in Splunk.
+
+**Setup**
+
+- DC01 (Windows Server 2025) streaming Security logs to Splunk Cloud (from Lab 4)
+- Test account: `akim` (Alex Kim), disabled and unused
+- Simulated activity on a Sunday morning: the account was re-enabled, its password reset, a few wrong-password attempts, then a successful network login
+
+**Evidence**
+
+![Simulated activity](lab5-activity.PNG)
+
+*The simulated activity on DC01: account enabled, password reset, wrong-password attempts, then a successful login.*
+
+![Splunk timeline](lab5-timeline-splunk.PNG)
+
+*Account enabled, password reset, and network login, all within 2 seconds.*
+
+![Failed logins after the audit fix](lab5-failed-logins.PNG)
+
+*After the audit fix, Splunk caught the failed login as Event 4771.*
+
+![Failure code](lab5-failure-code.PNG)
+
+*Failure Code 0x18 confirms a wrong password.*
+
+![Remediation](lab5-remediation.PNG)
+
+*Account disabled (Enabled: False) and password reset.*
+
+**Investigation**
+
+| Time (ET, Sun Oct 18) | Event ID | What happened |
+| --- | --- | --- |
+| 8:52:57 AM | 4722 | Dormant account `akim` re-enabled |
+| 8:52:58 AM | 4724 | Password reset by an admin account |
+| (not logged) | none | 3 wrong-password attempts left no record |
+| 8:52:59 AM | 4624 | Successful network login (Logon Type 3) |
+| 9:00:39 AM | 4771 | Wrong-password attempt caught after the audit fix (Failure Code 0x18) |
+
+- **Red flags:** Sunday morning, a dormant account, and enable → reset → login in 2 seconds.
+- **No 4672:** the account had no admin rights, which limited the impact.
+- **Audit gap:** I searched for failed logins (4625, 4771, 4776) and found none. On a domain controller, failed domain logins log as 4771, and Kerberos failure auditing was off. The attempts happened, but nothing recorded them.
+
+**Root cause:** A disabled account was turned back on and given a known password. Missing Kerberos failure auditing hid the password guessing.
+
+**Resolution**
+
+- Disabled the account and confirmed `Enabled: False`.
+- Reset the password so the known one no longer works, and required a change at next logon.
+- Turned on Kerberos Authentication Service auditing (success and failure) and re-tested to prove failures now reach Splunk.
+- Saved the searches in [/detections](detections/lab5-suspicious-login.md), including an off-hours login alert idea.
+
+**Lessons learned**
+
+- No logs does not mean nothing happened. Test that each detection can actually fire.
+- On a domain controller, failed logins show up as 4771 (Kerberos) or 4776 (NTLM), not just 4625.
+- Speed between events is a clue. People do not enable, reset, and log in within 2 seconds.
+- Next step: delete or tightly manage dormant accounts, and alert on 4722 for any account that has been disabled a long time.
+
+---
+
+## Lab 6: Phishing email analysis
+
+**Objective:** Find out how the attacker in Lab 5 got akim's password, by analyzing the phishing email akim received the night before, the way a SOC analyst triages a reported email.
+
+**Setup**
+
+- A raw email file ([lab6-sample-phish.eml](detections/lab6-sample-phish.eml)) sent to akim on Saturday night, before the Sunday-morning login in Lab 5. It uses fictional domains and is safe to open.
+- Notepad to read the raw email without rendering it (never double-click a suspicious email)
+- A PowerShell triage script on the host laptop, no VM needed
+
+**Evidence**
+
+![Email headers](lab6-headers.png)
+
+*Failed SPF, DKIM, and DMARC checks, and a Reply-To that doesn't match the sender.*
+
+![Email body](body.png)
+
+*Urgent message, generic greeting, typo, and a link whose text doesn't match where it goes.*
+
+![PowerShell triage](lab6-powershell.PNG)
+
+*My script pulls out the sender details, ID checks, and the real (defanged) link.*
+
+**Investigation**
+
+| Red flag | Where | What I found |
+| --- | --- | --- |
+| Urgency and threat | Body | "Expires in 2 hours", "you will be locked out" |
+| Generic greeting | Body | "Dear Employee" instead of a name |
+| Typo | Body | "IT Securty Team" |
+| Blocks verification | Body | "Do not contact the help desk", so the victim can't check |
+| Mismatched link | Body | Shows `helpdesk.local/password-reset` but goes to `quick-reset-desk.example` |
+| Spear phishing | Link | `?user=akim`: the link was built for one target |
+| Reply-To mismatch | Headers | From `helpdesk-support.example`, replies go to `quick-reset-desk.example` (the same attacker domain as the link) |
+| Failed ID checks | Headers | SPF fail, DKIM none, DMARC fail, sent from a bulk mailer (`mass-mailer-04.example`, 203.0.113.45) |
+| Delivered anyway | Headers | `dmarc=fail action=none` |
+
+**Root cause:** The domain's DMARC policy was set to `none` (monitor only), so an email that failed every check still reached akim's inbox. akim entered the password on the fake page, and the attacker used it the next morning (Lab 5).
+
+**Resolution**
+
+- Block both attacker domains (`helpdesk-support.example`, `quick-reset-desk.example`) in the email filter.
+- Search every mailbox for the same sender, subject, and link, and remove any copies.
+- Change the DMARC policy from `none` to `quarantine`, then `reject` once legitimate mail is confirmed passing.
+- Phishing awareness training for akim and the team: check the real link, and verify with the help desk.
+- akim's account was already disabled and the password reset in Lab 5.
+- Wrote a reusable triage script: [lab6-phishing-analysis.ps1](detections/lab6-phishing-analysis.ps1).
+
+**Lessons learned**
+
+- Read a link right to left. The real owner is the part right before the first `/`. Everything in front of it can be a costume.
+- Don't just delete a phishing email. Others may have received it, so hunt for it across all mailboxes.
+- Never reply to a phishing email. It confirms the address is real.
+- A failed check only protects you if the policy acts on it. DMARC `none` watches but doesn't block.
+- Labs 5 and 6 together tell one story: phishing email (cause) → stolen password → suspicious login (effect).
+
+---
+
+## Lab 7: Vulnerability scanning with Nessus
+
+**Objective:** Learn how vulnerability management works, by scanning my domain controller with and without credentials, fixing what the scan found, and re-scanning to prove the fixes worked.
+
+**Setup**
+
+- Nessus Essentials 10.12.5 (free) installed on my host laptop
+- Added a VirtualBox **Host-only** adapter to DC01 (192.168.56.101) so the scanner could reach it, while the NAT adapter kept the Splunk forwarder online
+- Confirmed the path with `Test-NetConnection 192.168.56.101 -Port 445` (SMB, needed for credentialed checks)
+- Two Basic Network Scans: one with no credentials, one with a domain admin login (Remote Registry and admin shares enabled during the scan, NTLMv1 disabled, credentials never sent in the clear)
+- Snapshot taken before patching
+
+**Evidence**
+
+![Scan 1: no credentials](lab7-scan1-results.PNG)
+
+*Scan 1 (outsider view): 25 findings, all Info.*
+
+![Credentialed scan settings](lab7-scan2-credentials.PNG)
+
+*Scan 2 credentials: domain login, NTLMv1 disabled, credentials never sent in the clear.*
+
+![Scan 2: credentialed](lab7-scan2-results.PNG)
+
+*Scan 2 (credentialed): 59 findings, including missing Windows and .NET security updates.*
+
+![Patching](lab7-patching.PNG)
+
+*Installing the October 2026 Windows and .NET security updates (after taking a snapshot first).*
+
+![Patch verified](lab7-patch-verified.PNG)
+
+*PowerShell proof the October 2026 update (KB5126646, build 33650) installed, even though the Windows Update screen was stuck at 7%.*
+
+![Re-scan after patching](lab7-rescan-results.PNG)
+
+*Re-scan after patching: Critical gone, one High left (CVE-2013-3900).*
+
+![Registry fix](lab7-registry-fix.PNG)
+
+*CVE-2013-3900 fix turned on in both registry locations.*
+
+![Final results](lab7-final-results.PNG)
+
+*Final re-scan: 0 Critical, 0 High.*
+
+**Investigation**
+
+| | Scan 1 (no credentials) | Scan 2 (credentialed) | After patching | After registry fix |
+| --- | --- | --- | --- | --- |
+| Total findings | 25 | 59 | 56 | 55 |
+| Critical | 0 | 1 | 0 | 0 |
+| High | 0 | 7+ | 1 | 0 |
+| Medium | 0 | 1+ | 0 | 0 |
+
+- **Outside vs inside:** without a login, DC01 looked clean. With a login, Nessus found 8 missing monthly Windows Server 2025 updates (February to September 2026) and 5 missing .NET updates. A non-credentialed scan alone would have given a false sense of security.
+- **Prioritizing:** the worst finding was CVSS 9.8 (Critical) but had an EPSS of about 3%. A CVSS 7.0 finding had an EPSS of about 80%. Severity (CVSS) and likelihood of attack (EPSS) together decide what to fix first.
+- **Patching wasn't enough:** after updating, one High remained: CVE-2013-3900 (WinVerifyTrust signature validation, CVSS 8.8). Microsoft's fix is opt-in, so no update enables it.
+- **Info can still matter:** Scan 1 flagged LLMNR as "Info", but attackers use LLMNR to capture passwords on a network.
+
+**Root cause:** DC01 had not received security updates since it was installed, and an opt-in hardening setting had never been enabled.
+
+**Resolution**
+
+- Installed the October 2026 cumulative update. Windows updates are cumulative, so one update fixed all 8 missing monthly patches; the .NET update fixed the other 5.
+- Troubleshot a Windows Update stuck at 7%: checked disk space (29.7 GB free), reset the update cache, restarted, then verified with `Get-HotFix` and the build number that the update had actually installed.
+- Enabled `EnableCertPaddingCheck` in both the 64-bit and 32-bit registry locations, verified it, and restarted.
+- Re-scanned after each fix with the same credentialed scan for a fair before/after comparison.
+- Saved the verification commands in [/detections](detections/lab7-remediation-checks.ps1).
+
+**Lessons learned**
+
+- Always run credentialed scans. The outside view hid every serious finding.
+- Don't trust the screen, check the evidence. The progress bar said 7%; PowerShell proved the update was installed. My first registry check also caught that the fix had never been applied.
+- Patching does not equal fully fixed. Some vulnerabilities need a configuration change.
+- Prioritize with both severity (CVSS) and exploit likelihood (EPSS), not severity alone.
+- Re-scan to prove a fix. A fix isn't done until the scanner agrees.
+
+---
+
+## Lab 8: Linux security monitoring with Splunk
+
+**Objective:** Extend monitoring to Linux, by forwarding an Ubuntu server's security log to Splunk Cloud, simulating SSH password guessing and a privilege escalation attempt, building detections and a dashboard, then hardening SSH and proving the attack is blocked.
+
+**Setup**
+
+- Ubuntu Server 26.04.1 LTS VM (`ubuntu01`, 2 GB RAM) with NAT for internet and a Host-only adapter (192.168.56.102) for SSH from my laptop. DC01 powered off (one VM at a time).
+- Patched with `apt`, snapshots before each major change.
+- Splunk Universal Forwarder 10.6.1.1 sending `/var/log/auth.log` (`sourcetype = linux_secure`) to Splunk Cloud. Credentials package copied over with `scp`.
+- The forwarder runs as the low-privilege user `splunkfwd`. It couldn't read `auth.log` (`syslog:adm`, mode 640), so I added it to the `adm` group for read-only access. In Lab 4 I fixed the same problem on Windows by running the forwarder as LocalSystem; this time I applied least privilege.
+- Configured the forwarder to start at boot with systemd.
+
+**Evidence**
+
+![Logs arriving in Splunk](lab8-first-logs.PNG)
+
+*Ubuntu's auth.log arriving in Splunk Cloud as linux_secure.*
+
+![Least privilege](lab8-least-privilege.PNG)
+
+*The splunkfwd user reading auth.log after being added to the adm group.*
+
+![Dashboard](lab8-dashboard.PNG)
+
+*"UBUNTU01 Linux Security" dashboard: failed SSH logins, denied sudo, and new accounts.*
+
+![sudo-rs denial](lab8-sudo-attempt.PNG)
+
+*The new sudo-rs denied intern's attempt to read /etc/shadow, but logged nothing.*
+
+![Denial now detected](lab8-sudo-detected.PNG)
+
+*After switching to classic sudo, Splunk catches the denied attempt.*
+
+![SSH hardened](lab8-ssh-hardened.PNG)
+
+*SSH confirmed using the hardened settings.*
+
+![Attack blocked](lab8-attack-blocked.PNG)
+
+*After hardening, login attempts are rejected instantly with no password prompt.*
+
+![Clock fixed](lab8-clock-fixed.PNG)
+
+*The VM clock was 2 hours behind ("System clock synchronized: no") until I resynced it.*
+
+![Blocked attempts in Splunk](lab8-blocked-in-splunk.PNG)
+
+*The blocked attempts still show up in Splunk: blocked and recorded.*
+
+**Investigation**
+
+| What I tested | What I found |
+| --- | --- |
+| 9 wrong SSH passwords (6 for a fake user, 3 for a real user) | My first search counted only 2 for the real user. Pivoting on the SSH port showed the 3rd attempt was logged as `Connection closed by authenticating user ... [preauth]`, so I tuned the search to count both line types. |
+| A regular user (`intern`) running `sudo cat /etc/shadow` | Denied, but Ubuntu 26.04's new `sudo-rs` logged nothing in auth.log or journald. A user could try to escalate privileges with no record. |
+| Creating the `intern` account | `useradd` logs `new user: name=intern, UID=1002`, the Linux equivalent of Windows Event 4720. |
+| Blocked attempts after hardening | Logged on Ubuntu but missing from a "Last 15 minutes" search. The VM clock was 2 hours behind, so Splunk filed the events in the past. |
+
+**Root cause:** SSH allowed password logins from any account, and two visibility problems (sudo-rs not logging denials, and clock drift) could hide attacker activity.
+
+**Resolution**
+
+- Switched from `sudo-rs` to classic sudo (`update-alternatives --config sudo`), re-tested, and Splunk now catches the denied attempt (`intern`, `/usr/bin/cat /etc/shadow`).
+- Hardened SSH in `/etc/ssh/sshd_config.d/00-hardening.conf`: no root login, no passwords (key-only), `MaxAuthTries 3`, and `AllowUsers jayden`. Set up an ed25519 key from my laptop first so I wouldn't lock myself out, then verified with `sshd -t` and `sshd -T`.
+- Re-ran the attack: `fakeuser` and `intern` were rejected instantly with `Permission denied (publickey)`. Nothing left to guess.
+- Fixed the clock with `chronyc makestep` and confirmed the blocked attempts in Splunk.
+- Built a 3-panel dashboard and saved all searches in [/detections](detections/lab8-linux-splunk.md).
+
+**Lessons learned**
+
+- Test detections against what actually happened. My first SSH search undercounted.
+- No log doesn't mean nothing happened. A modern tool (sudo-rs) silently skipped logging a denied privilege escalation. It's a real trade-off: memory safety vs visibility.
+- Time sync matters. A 2-hour clock drift made real events invisible in a normal search.
+- Hardening changes the logs. After disabling passwords, attempts show up as `Invalid user` instead of `Failed password`, so detections need updating too.
+- Keep a second session open and test with a key before disabling password logins.
+- Next step: `auditd` for sudo and sensitive-file monitoring, and connecting DC01 to the same Splunk instance for one Windows + Linux dashboard.
