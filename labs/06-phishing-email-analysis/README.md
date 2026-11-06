@@ -56,6 +56,11 @@
 - akim's account was already disabled and the password reset in Lab 5.
 - Wrote a reusable triage script: [lab6-phishing-analysis.ps1](../../detections/lab6-phishing-analysis.ps1).
 
+**Analyst note (added after review)**
+
+- SPF checks the **envelope sender** (the `Return-Path` domain, here `mass-mailer-04.example`), not the friendly `From:` name. The sample's SPF comment names `helpdesk-support.example`, which is a simplification in my training email.
+- The real lesson still holds: DMARC compares the visible `From:` domain to the domains that passed SPF or DKIM. Nothing **aligned** with `helpdesk-support.example`, so DMARC failed, and `action=none` let the email through anyway.
+
 **Lessons learned**
 
 - Read a link right to left. The real owner is the part right before the first `/`. Everything in front of it can be a costume.

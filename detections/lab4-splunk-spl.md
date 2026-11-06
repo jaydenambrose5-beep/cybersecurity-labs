@@ -2,6 +2,8 @@
 
 All queries below were run in Splunk Cloud against logs forwarded from DC01 (Windows Server 2025).
 
+**Note:** the Lab 3 attack happened before the forwarder was installed, so I re-ran a short simulation for this lab with new names (`svc-update`, `\WindowsDefenderCheck`). That is why they differ from Lab 3 (`svc-backup`, `WindowsUpdateCheck`).
+
 ## Dashboard panels
 
 **Logs by Source** - how much each log source is sending:
@@ -64,3 +66,16 @@ NOT CommandLine="*SplunkUniversalForwarder*"
 **Tested:** No encoded command reached Splunk during this lab (the Lab 3 test ran before the forwarder was installed). I validated the query logic by searching for all PowerShell launches, which returned 1,589 events.
 
 **Tuning:** every one of those events was `splunk-powershell.exe` run by SYSTEM once a minute: the forwarder itself. The `NOT CommandLine="*SplunkUniversalForwarder*"` line filters out that noise. The encoded-command trigger was confirmed in Lab 3 using `Get-WinEvent` (see [lab3-powershell-hunting.ps1](lab3-powershell-hunting.ps1)).
+
+### 4b. Improved version: short flags (not yet tested)
+
+Attackers rarely type `-EncodedCommand` in full. PowerShell accepts any shortened form (`-e`, `-ec`, `-en`, `-enc`, ...) and a `/` instead of `-`, which search 4 would miss.
+
+```spl
+index=* host=DC01 sourcetype="WinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1 (Image="*\\powershell.exe" OR Image="*\\pwsh.exe")
+NOT CommandLine="*SplunkUniversalForwarder*"
+| regex CommandLine="(?i)\s[-/](e|ec|en\w*)\s"
+| table _time User CommandLine
+```
+
+**Status:** written after a portfolio review and **not yet tested**. Next step: run `powershell -enc <base64>` on DC01 and confirm this search catches it.

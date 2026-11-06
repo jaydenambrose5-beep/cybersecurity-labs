@@ -11,6 +11,12 @@ Get-WinEvent -LogName 'Microsoft-Windows-Sysmon/Operational' -FilterXPath "*[Sys
     Select-Object -First 1 |
     Format-List TimeCreated, Message
 
+# Improved (not yet tested): also catch short flags like -enc, -ec, -e
+Get-WinEvent -LogName 'Microsoft-Windows-Sysmon/Operational' -FilterXPath "*[System[EventID=1]]" -MaxEvents 500 |
+    Where-Object { $_.Message -match '(?i)\s[-/](e|ec|en\w*)\s' } |
+    Select-Object -First 5 |
+    Format-List TimeCreated, Message
+
 # PowerShell Event 4104: script block logging shows the decoded command
 Get-WinEvent -LogName 'Microsoft-Windows-PowerShell/Operational' -FilterXPath "*[System[EventID=4104]]" -MaxEvents 50 |
     Where-Object { $_.Message -like '*Hello from the lab*' } |
