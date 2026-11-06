@@ -8,7 +8,7 @@ Eight self-built labs covering help desk support, Active Directory administratio
 
 **Skills:** osTicket · Active Directory · Windows Server · Group Policy · Sysmon · Splunk Cloud · Event Viewer and PowerShell log analysis · Phishing and email header analysis (SPF, DKIM, DMARC) · Nessus vulnerability scanning · Linux (Ubuntu Server, SSH hardening) · VirtualBox
 
-**Now building:** Home lab v2, a segmented company network (pfSense, domain-joined workstations, Kali) on a new 32 GB laptop, with a separate on-prem SOC server running Wazuh and Splunk. The design is in [Lab 9](#lab-9-home-lab-v2-hardware-assessment-and-architecture-redesign).
+**Now building:** Home lab v2, a segmented company network (OPNsense firewall, domain-joined workstations, Kali) on a new 32 GB laptop, with a separate on-prem SOC server running Wazuh and Splunk. The design is in [Lab 9](#lab-9-home-lab-v2-hardware-assessment-and-architecture-redesign); the build started in [Lab 10](#lab-10-opnsense-firewall-and-isolated-lab-network).
 
 **Currently training:** Working through the TryHackMe *Cyber Security 101* path (hands-on labs in Linux, networking, defensive and offensive security).
 
@@ -548,6 +548,10 @@ VirtualizationBasedSecurityStatus : 2      <- VBS enabled and running
 SecurityServicesRunning           : {2}    <- Memory Integrity (HVCI)
 ```
 
+![Laptop inventory](screenshots/lab9/lab9-01-laptop-inventory.png)
+
+*Laptop inventory: Windows 11 Home, 743 GB free, an unused Ethernet port, and VBS + Memory Integrity running.*
+
 **Investigation**
 
 | Finding | What I found |
@@ -602,4 +606,99 @@ flowchart LR
 - Asset records drift. The VM labels were wrong, which is why a SOC verifies facts instead of trusting the inventory.
 - Keep host protections on, and design around the performance cost.
 - Check `hostname` before running commands. I ran the laptop checks on the desktop by mistake first, the same kind of slip as Lab 3.
-- Next: Lab 10, VMware Workstation Pro and pfSense with segmented networks.
+- Next: Lab 10, hypervisor and firewall with segmented networks.
+
+> **Update:** the build uses VirtualBox and OPNsense instead of VMware and pfSense. Both vendors now require an account to download, and I pivoted rather than lose time. See Lab 10.
+
+---
+
+## Lab 10: OPNsense firewall and isolated lab network
+
+**Status:** In progress. The firewall is installed; next is a lab PC on the private network to manage it.
+
+**Objective:** Build the gatekeeper for home lab v2: a firewall VM that separates a private company network (CORP-LAN) from the internet, so lab machines and future attack simulations stay sealed off from my real computer and home network.
+
+**Setup**
+
+- New laptop (32 GB RAM, Windows 11 Home, VBS and Memory Integrity left **on**)
+- VirtualBox 7.2.22 (Expert Mode, for Internal Network options)
+- OPNsense 26.7 (open-source firewall, FreeBSD based)
+- Firewall VM `OPNsense-FW`: 2 GB RAM, 2 vCPU, 16 GB disk
+  - **Adapter 1 / em0 = WAN:** VirtualBox NAT (internet access, 10.0.2.15)
+  - **Adapter 2 / em1 = LAN:** Internal Network `CORP-LAN` (192.168.1.1/24)
+- Every installer was verified with `Get-FileHash` against the vendor's published SHA256 before use
+
+```mermaid
+flowchart LR
+    NET["Internet"] --- NAT["VirtualBox NAT"]
+    NAT -- "WAN em0<br/>10.0.2.15" --- FW["OPNsense-FW<br/>firewall"]
+    FW -- "LAN em1<br/>192.168.1.1/24" --- LAN["CORP-LAN<br/>(Internal Network)<br/>lab PCs go here next"]
+```
+
+**Evidence**
+
+![VirtualBox installed](screenshots/lab10/lab10-01-virtualbox-installed.png)
+
+*Fresh VirtualBox install on the laptop.*
+
+![VirtualBox hash verified](screenshots/lab10/lab10-02-virtualbox-hash-verified.png)
+
+*VirtualBox installer SHA256 matched Oracle's published checksum for 7.2.22.*
+
+![OPNsense hash verified](screenshots/lab10/lab10-03-opnsense-hash-verified.png)
+
+*OPNsense 26.7 image SHA256 matched the official checksum file.*
+
+![VM created](screenshots/lab10/lab10-04-opnsense-vm-created.png)
+
+*Firewall VM created: FreeBSD 64-bit, 2 GB RAM, installer ISO attached.*
+
+![Network adapters](screenshots/lab10/lab10-05-opnsense-network-adapters.png)
+
+*Two adapters: NAT for the WAN and the isolated Internal Network `CORP-LAN` for the LAN.*
+
+![Interfaces assigned](screenshots/lab10/lab10-06-opnsense-interfaces-assigned.png)
+
+*Manual interface assignment: WAN on em0 (DHCP from NAT), LAN on em1 (192.168.1.1/24).*
+
+![Installer](screenshots/lab10/lab10-07-opnsense-installer-start.png)
+
+*OPNsense installer started.*
+
+![Install complete](screenshots/lab10/lab10-08-opnsense-install-complete.png)
+
+*Install finished; root password set (not shown).*
+
+![Installed first boot](screenshots/lab10/lab10-09-opnsense-installed-first-boot.png)
+
+*First boot from the virtual disk (`/dev/gpt/rootfs`) with the correct WAN/LAN mapping.*
+
+![Final VM config](screenshots/lab10/lab10-10-opnsense-vm-final-config.png)
+
+*Final VM state: installer ISO removed, NAT + CORP-LAN adapters.*
+
+**Investigation**
+
+| Problem | What I found |
+| --- | --- |
+| VMware download blocked | Broadcom's support portal requires an account, and login kept rejecting my username. |
+| pfSense download | pfSense CE now ships only through the Netgate online installer with a store account. |
+| Wrong network sides by default | Booting the installer without manual assignment made em0 the LAN, but em0 is the NAT (internet) adapter. |
+| Firewall kept booting the installer | After install, it still showed "running in live mode from install media" because the ISO was still attached and boots first. |
+| Couldn't remove the ISO | Storage settings were locked because the VM was in a **Saved** state, not powered off. |
+
+**Resolution**
+
+- Pivoted to VirtualBox (no account, already used in Labs 1-8) and OPNsense (direct download, same firewall concepts as pfSense), and still verified both downloads by hash.
+- Assigned interfaces manually: **WAN = em0 (NAT)**, **LAN = em1 (CORP-LAN)**.
+- Installed to disk with UFS (lighter than ZFS for a 2 GB VM).
+- Discarded the saved state, removed the ISO, and confirmed boot from `/dev/gpt/rootfs` with the right interface mapping.
+
+**Lessons learned**
+
+- Verify every download. A matching SHA256 proves the file is exactly what the vendor published.
+- When a tool fights you, pivot. Same lesson as Lab 4: the goal is the skill, not the brand.
+- Know which adapter is which. NAT = outside (WAN), Internal Network = inside (LAN). Swapping them would put the firewall backwards.
+- "Saved" is not "off." VirtualBox locks hardware changes until the VM is fully powered off.
+- An installed system should boot from its disk. If it still says "live mode", the installer media is still attached.
+- Next: a lab PC on CORP-LAN to reach the OPNsense web dashboard at https://192.168.1.1 and set firewall rules.
