@@ -9,6 +9,8 @@ The actual searches I used to investigate activity in my home lab.
 | [lab5-suspicious-login.md](lab5-suspicious-login.md) | Splunk SPL + PowerShell | Lab 5: Suspicious login investigation |
 | [lab6-phishing-analysis.ps1](lab6-phishing-analysis.ps1) | PowerShell | Lab 6: Phishing email analysis |
 | [lab6-sample-phish.eml](lab6-sample-phish.eml) | Sample email (fictional domains) | Lab 6: Phishing email analysis |
+| [lab7-remediation-checks.ps1](lab7-remediation-checks.ps1) | PowerShell | Lab 7: Vulnerability scanning with Nessus |
+| [lab8-linux-splunk.md](lab8-linux-splunk.md) | Splunk SPL | Lab 8: Linux security monitoring |
 
 ## Event IDs used
 
