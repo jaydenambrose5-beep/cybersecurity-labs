@@ -1,6 +1,6 @@
 # Lab 10: OPNsense firewall and isolated lab network
 
-[← Lab 9](../09-home-lab-v2-architecture/) · [🏠 Portfolio home](../../README.md)
+[← Lab 9](../09-home-lab-v2-architecture/) · [🏠 Portfolio home](../../README.md) · [Lab 11 →](../11-opnsense-firewall-rules/)
 
 | | |
 | --- | --- |
@@ -146,6 +146,8 @@ flowchart LR
 - The firewall dashboard is only reachable from inside CORP-LAN. My real laptop can't reach it, which proves the isolation works.
 - Next: firewall rules and logging, then an attack network for Kali behind the same firewall.
 
+> **Update (Lab 11):** this isolation only covered one direction. The lab LAN could still reach my home network through VirtualBox NAT, and the lab used the same 192.168.1.0/24 range as my home Wi-Fi. [Lab 11](../11-opnsense-firewall-rules/) renumbered the lab to 10.10.10.0/24 and blocked lab-to-home traffic.
+
 ---
 
-[← Lab 9](../09-home-lab-v2-architecture/) · [🏠 Portfolio home](../../README.md)
+[← Lab 9](../09-home-lab-v2-architecture/) · [🏠 Portfolio home](../../README.md) · [Lab 11 →](../11-opnsense-firewall-rules/)
