@@ -19,7 +19,7 @@ I'm an aspiring **SOC analyst** based in **Jacksonville, NC**, building practica
 - 🔎 **Connected investigation:** traced a suspicious Sunday-morning login ([Lab 5](labs/05-suspicious-login-investigation/)) back to the spear-phishing email that stole the password ([Lab 6](labs/06-phishing-email-analysis/)).
 - 🛡️ **Vulnerability management:** took a domain controller from **1 Critical + 7+ High** findings to **0** with Nessus, then re-scanned to prove it ([Lab 7](labs/07-vulnerability-scanning-nessus/)).
 - 🕳️ **Found logging gaps:** failed domain logins weren't being recorded (Lab 5), and Ubuntu's new `sudo-rs` silently skipped logging a denied privilege escalation ([Lab 8](labs/08-linux-security-monitoring/)).
-- 🧱 **Network segmentation:** built an isolated company network behind an OPNsense firewall ([Lab 10](labs/10-opnsense-firewall-network/)).
+- 🧱 **Network segmentation:** built an isolated company network behind an OPNsense firewall ([Lab 10](labs/10-opnsense-firewall-network/)), then locked it down with tested, logged firewall rules ([Lab 11](labs/11-opnsense-firewall-rules/)).
 
 ---
 
@@ -37,6 +37,7 @@ I'm an aspiring **SOC analyst** based in **Jacksonville, NC**, building practica
 | 8 | [Linux security monitoring](labs/08-linux-security-monitoring/) | Monitored and hardened an Ubuntu server in Splunk | Detected SSH guessing; SSH now key-only | SOC / Linux |
 | 9 | [Home lab v2 architecture](labs/09-home-lab-v2-architecture/) | Inventoried hardware and audited the old lab | Designed a segmented v2 lab | Planning |
 | 10 | [OPNsense firewall network](labs/10-opnsense-firewall-network/) | Built a firewall and isolated company LAN | Lab PC reaches the internet only through the firewall | Networking |
+| 11 | [OPNsense firewall rules](labs/11-opnsense-firewall-rules/) | Wrote, ordered and tested block rules, then read the raw logs | Lab blocked from home network; every block logged | Networking / SOC |
 
 My own detection queries and scripts are in [`/detections`](detections/).
 
@@ -96,13 +97,14 @@ flowchart LR
     UF -- "Encrypted forwarding" --> SC["Splunk Cloud<br/>SIEM + monitoring dashboard"]
 ```
 
-**Home lab v2** (in progress) runs on a 32 GB laptop with a firewall-segmented network. See [Lab 9](labs/09-home-lab-v2-architecture/) for the design and [Lab 10](labs/10-opnsense-firewall-network/) for the build.
+**Home lab v2** (in progress) runs on a 32 GB laptop with a firewall-segmented network. See [Lab 9](labs/09-home-lab-v2-architecture/) for the design, [Lab 10](labs/10-opnsense-firewall-network/) for the build, and [Lab 11](labs/11-opnsense-firewall-rules/) for the firewall rules.
 
 ```mermaid
 flowchart LR
     NET["Internet"] --- FW["OPNsense firewall<br/>fw1.corp.lab"]
-    FW --- CORP["CORP-LAN 192.168.1.0/24<br/>Windows 11 client (built)<br/>domain controller (next)"]
+    FW --- CORP["CORP-LAN 10.10.10.0/24<br/>Windows 11 client (built)<br/>domain controller (next)"]
     FW -.- ATK["Attack network<br/>Kali (planned)"]
+    FW -. "blocked" .-> HOME["Home network"]
     FW -.- SOC["SOC server<br/>Wazuh + Splunk (planned)"]
 ```
 
