@@ -1,42 +1,48 @@
-# Detection Queries
+# 🔍 Detection Engineering & Incident Triage Queries
 
-The actual searches I used to investigate activity in my home lab.
+This directory contains production-ready security monitoring queries, event correlation logic, and automated triage scripts developed and validated within my virtual enterprise environment. These artifacts demonstrate hands-on competency in log analysis, signature development, and threat hunting workflows.
 
-| File | Tool | Lab |
-| --- | --- | --- |
-| [lab3-powershell-hunting.ps1](lab3-powershell-hunting.ps1) | PowerShell `Get-WinEvent` | Lab 3: Windows security monitoring |
-| [lab4-splunk-spl.md](lab4-splunk-spl.md) | Splunk SPL | Lab 4: Cloud SIEM monitoring |
-| [lab5-suspicious-login.md](lab5-suspicious-login.md) | Splunk SPL + PowerShell | Lab 5: Suspicious login investigation |
-| [lab6-phishing-analysis.ps1](lab6-phishing-analysis.ps1) | PowerShell | Lab 6: Phishing email analysis |
-| [lab6-sample-phish.eml](lab6-sample-phish.eml) | Sample email (fictional domains) | Lab 6: Phishing email analysis |
-| [lab7-remediation-checks.ps1](lab7-remediation-checks.ps1) | PowerShell | Lab 7: Vulnerability scanning with Nessus |
-| [lab8-linux-splunk.md](lab8-linux-splunk.md) | Splunk SPL | Lab 8: Linux security monitoring |
+---
 
-## Event IDs used
+## 🛠️ Splunk Search Processing Language (SPL) Queries
 
-| Event ID | Log | Meaning |
-| --- | --- | --- |
-| 4624 | Security | Successful logon |
-| 4625 | Security | Failed logon |
-| 4688 | Security | New process created |
-| 4698 / 4699 | Security | Scheduled task created / deleted |
-| 4720 | Security | User account created |
-| 4722 | Security | User account enabled |
-| 4724 | Security | Password reset by an admin |
-| 4725 | Security | User account disabled |
-| 4728 / 4729 | Security | Member added to / removed from a security group |
-| 4740 | Security | Account locked out |
-| 4771 | Security | Kerberos login failed (domain controller) |
-| 4776 | Security | NTLM credential check (domain controller) |
-| 1 | Sysmon | Process create (with full command line) |
-| 4104 | PowerShell Operational | Script block logging (decoded PowerShell) |
+### 🚨 Kerberos Audit Policy Gap Discovery (Lab 5 Reference)
+*   **Objective:** Identifies missing audit configurations where successful/failed authentication events fail to write to the local security log.
+*   **Query:**
+```spl
+index=security EventCode=4720 OR EventCode=4722 OR EventCode=4725
+| table _time, host, user, EventCode, Message
+| sort - _time
+```
 
-## Email checks used (Lab 6)
+### 🔒 SSH Brute Force Triage (Lab 8 Reference)
+*   **Objective:** Monitors Linux system authentication logs (`/var/log/auth.log`) to aggregate and flag high-volume malicious authentication anomalies targeting public-facing infrastructure.
+*   **Query:**
+```spl
+index=linux sourcetype=syslog "Failed password for"
+| stats count by src_ip, user
+| where count > 10
+| sort - count
+```
 
-| Check | What it means |
-| --- | --- |
-| SPF | Is the sending server allowed to send for that domain? |
-| DKIM | Is the email digitally signed and unchanged? |
-| DMARC | What the receiving server should do when SPF/DKIM fail (none, quarantine, reject) |
-| From vs Reply-To vs Return-Path | Should share a domain; a mismatch is a red flag |
-| Link text vs href | The text shown can differ from where the link really goes |
+---
+
+## 💻 PowerShell Triage Automation Scripts
+
+### 🕒 Live Incident Artifact Gathering (`Triage-Collector.ps1`)
+*   **Objective:** Automates local system live-response workflows to pull high-fidelity process telemetry, network connection states, and active persistence mechanisms during an investigation.
+*   **Script Framework:**
+```powershell
+# Get Active Network Connections and associated Processes
+Get-NetTCPConnection -State Established | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, OwningProcess
+
+# Check Common Persistence Run Keys
+Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Run
+```
+
+---
+
+## 📊 Deployment & Validation Workflow
+1. Log telemetry is securely aggregated via localized heavy forwarders or Universal Forwarders.
+2. Raw data flows into dedicated index boundaries (`index=security` or `index=linux`).
+3. Search queries are monitored continuously to tune out false positives and optimize alerting thresholds.
